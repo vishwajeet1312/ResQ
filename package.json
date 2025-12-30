@@ -1,0 +1,22 @@
+{
+  "name": "resq-platform",
+  "version": "1.0.0",
+  "description": "ResQ Emergency Response Platform - Full Stack Application",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "cd client && npm run build",
+    "start:server": "cd server && npm start",
+    "start:client": "cd client && npm start",
+    "start": "concurrently \"npm run start:server\" \"npm run start:client\"",
+    "seed": "cd server && npm run seed"
+  },
+  "keywords": ["emergency", "response", "disaster", "management"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
