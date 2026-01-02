@@ -4,17 +4,45 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { Clock, MapPin, Navigation } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Clock, MapPin, Navigation, Plus } from "lucide-react"
 import { useState, useEffect } from "react"
 import { SOSDetailDialog } from "@/components/sos-detail-dialog"
 import { triageAPI } from "@/lib/api"
-import { useAuth } from "@clerk/nextjs"
+import { useAuth, useUser } from "@clerk/nextjs"
+import { useToast } from "@/hooks/use-toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 export function TriageDashboard({ onViewAllMissions }) {
   const { isSignedIn } = useAuth()
+  const { user } = useUser()
+  const { toast } = useToast()
   const [needs, setNeeds] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [newTriage, setNewTriage] = useState({
+    type: "",
+    need: "",
+    location: "",
+    notes: ""
+  })
 
   useEffect(() => {
     if (isSignedIn) {
@@ -25,16 +53,20 @@ export function TriageDashboard({ onViewAllMissions }) {
   const fetchTriageData = async () => {
     try {
       const response = await triageAPI.getAll({ limit: 10, sort: '-priority' })
-      if (response.data && Array.isArray(response.data)) {
-        const formattedNeeds = response.data.map(triage => ({
-          id: triage.triageId || triage._id,
-          type: triage.category || "General",
-          user: triage.patientName || "Unknown",
-          location: triage.location?.address || `${triage.location?.coordinates[1]}, ${triage.location?.coordinates[0]}`,
-          need: triage.notes || triage.symptoms || "Assessment pending",
+      // Axios wraps the response, so response.data is the backend response body
+      // Backend returns { success: true, data: [...] }
+      const triageData = response.data?.data || response.data || []
+      if (Array.isArray(triageData)) {
+        const formattedNeeds = triageData.map(triage => ({
+          id: triage.requestId || triage._id,
+          type: triage.type || "Other",
+          user: triage.userName || "Unknown",
+          location: triage.location?.address || triage.location?.sector || `${triage.location?.coordinates?.[1] || 0}, ${triage.location?.coordinates?.[0] || 0}`,
+          need: triage.need || "Assessment pending",
           time: getTimeAgo(triage.createdAt),
           status: triage.status,
-          score: triage.priority || 50,
+          score: triage.score || triage.priority || 50,
+          distance: triage.location?.distance || 0,
         }))
         setNeeds(formattedNeeds)
       }
@@ -62,8 +94,61 @@ export function TriageDashboard({ onViewAllMissions }) {
     try {
       await triageAPI.updateStatus(id, newStatus)
       setNeeds((prev) => prev.map((n) => (n.id === id ? { ...n, status: newStatus } : n)))
+      toast({
+        title: "Status Updated",
+        description: "Triage request status has been updated."
+      })
     } catch (error) {
       console.error('Error updating triage status:', error)
+      toast({
+        title: "Update Failed",
+        description: error.response?.data?.error || "Failed to update status.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCreateTriage = async () => {
+    if (!newTriage.type || !newTriage.need || !newTriage.location) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill all required fields.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      const triageData = {
+        type: newTriage.type,
+        need: newTriage.need,
+        location: {
+          type: "Point",
+          coordinates: [0, 0],
+          address: newTriage.location,
+          sector: newTriage.location
+        },
+        notes: newTriage.notes,
+        affectedCount: 1
+      }
+
+      await triageAPI.create(triageData)
+      
+      toast({
+        title: "Request Submitted",
+        description: "Triage request has been created successfully."
+      })
+      
+      setIsCreateOpen(false)
+      setNewTriage({ type: "", need: "", location: "", notes: "" })
+      fetchTriageData()
+    } catch (error) {
+      console.error('Error creating triage:', error)
+      toast({
+        title: "Submission Failed",
+        description: error.response?.data?.error || "Failed to create triage request.",
+        variant: "destructive"
+      })
     }
   }
 
@@ -74,9 +159,20 @@ export function TriageDashboard({ onViewAllMissions }) {
           <h3 className="text-lg font-bold">Emergency Triage</h3>
           <p className="text-xs text-muted-foreground">High-priority geospatial clusters</p>
         </div>
-        <Badge variant="outline" className="text-destructive border-destructive/50 animate-pulse">
-          4 CRITICAL
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-destructive border-destructive/50 animate-pulse">
+            {needs.filter(n => n.score >= 75).length} CRITICAL
+          </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-3"
+            onClick={() => setIsCreateOpen(true)}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add
+          </Button>
+        </div>
       </div>
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-3">
@@ -161,7 +257,80 @@ export function TriageDashboard({ onViewAllMissions }) {
       {detailItem && (
         <SOSDetailDialog item={detailItem} open={!!detailItem} onOpenChange={(open) => !open && setDetailItem(null)} />
       )}
+
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="bg-black/90 border-white/10 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle>Create Triage Request</DialogTitle>
+            <DialogDescription>Submit a new emergency triage request</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="type">Type</Label>
+              <Select 
+                value={newTriage.type}
+                onValueChange={(value) => setNewTriage({...newTriage, type: value})}
+              >
+                <SelectTrigger className="bg-white/5 border-white/10">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Critical">Critical</SelectItem>
+                  <SelectItem value="Rescue">Rescue</SelectItem>
+                  <SelectItem value="Medical">Medical</SelectItem>
+                  <SelectItem value="Power">Power</SelectItem>
+                  <SelectItem value="Resource">Resource</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="need">Need/Request</Label>
+              <Input 
+                id="need" 
+                placeholder="e.g. Insulin & Water" 
+                className="bg-white/5 border-white/10"
+                value={newTriage.need}
+                onChange={(e) => setNewTriage({...newTriage, need: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="location">Location</Label>
+              <Input 
+                id="location" 
+                placeholder="e.g. Sector 7" 
+                className="bg-white/5 border-white/10"
+                value={newTriage.location}
+                onChange={(e) => setNewTriage({...newTriage, location: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notes">Additional Notes (Optional)</Label>
+              <Textarea 
+                id="notes" 
+                placeholder="Additional details..." 
+                className="bg-white/5 border-white/10"
+                value={newTriage.notes}
+                onChange={(e) => setNewTriage({...newTriage, notes: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsCreateOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              className="bg-primary text-black font-bold" 
+              onClick={handleCreateTriage}
+            >
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
-

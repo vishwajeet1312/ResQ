@@ -15,20 +15,35 @@ const generateReportId = () => {
 // @access  Private
 router.post('/', async (req, res) => {
   try {
-    const { type, location, description, severity, affectedCount, attachments } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'Anonymous';
+    const { type, location, description, severity, affectedCount, attachments, media } = req.body;
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'Anonymous';
+
+    // Validation
+    if (!type || !description) {
+      return res.status(400).json({
+        success: false,
+        error: 'Type and description are required'
+      });
+    }
+
+    // Handle both 'attachments' and 'media' fields (frontend sends 'media')
+    const incidentAttachments = attachments || media || [];
 
     const incident = await Incident.create({
       reportId: generateReportId(),
       userId,
       userName,
       type,
-      location,
+      location: location || {
+        type: 'Point',
+        coordinates: [0, 0],
+        address: 'Location not specified'
+      },
       description,
       severity: severity || 'Medium',
       affectedCount: affectedCount || 0,
-      attachments: attachments || [],
+      attachments: incidentAttachments,
       status: 'Open'
     });
 
@@ -124,8 +139,8 @@ router.get('/:id', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const { status, severity, description, affectedCount } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'User';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'User';
 
     const incident = await Incident.findById(req.params.id);
 
@@ -175,8 +190,8 @@ router.patch('/:id', async (req, res) => {
 // @access  Private
 router.post('/:id/assign', async (req, res) => {
   try {
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'Responder';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'Responder';
 
     const incident = await Incident.findById(req.params.id);
 

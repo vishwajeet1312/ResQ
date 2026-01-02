@@ -19,6 +19,13 @@ import {
 import { Label } from "@/components/ui/label"
 import { resourceAPI } from "@/lib/api"
 import { useUser } from "@clerk/nextjs"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 const iconMap = {
   Health: Activity,
@@ -40,7 +47,8 @@ export function ResourceInventory() {
   const [newResource, setNewResource] = useState({
     name: "",
     category: "",
-    quantity: 0
+    stock: 0,
+    total: 0
   })
 
   useEffect(() => {
@@ -52,12 +60,18 @@ export function ResourceInventory() {
   const fetchResources = async () => {
     try {
       const response = await resourceAPI.getAll()
-      if (response.data && Array.isArray(response.data)) {
-        const formattedResources = response.data.map(res => {
-          const percentage = (res.quantity / (res.quantity + 50)) * 100
-          let status = "Stable"
+      // Axios wraps the response, so response.data is the backend response body
+      // Backend returns { success: true, data: [...] }
+      const resourcesData = response.data?.data || response.data || []
+      if (Array.isArray(resourcesData)) {
+        const formattedResources = resourcesData.map(res => {
+          const stock = res.stock || 0
+          const total = res.total || stock || 1
+          const percentage = total > 0 ? (stock / total) * 100 : 0
+          let status = res.status || "Stable"
           if (percentage < 30) status = "Critical"
           else if (percentage < 60) status = "Low"
+          else if (percentage >= 80) status = "Active"
           
           return {
             _id: res._id,
@@ -65,11 +79,11 @@ export function ResourceInventory() {
             category: res.category,
             icon: iconMap[res.category] || iconMap.default,
             status,
-            stock: res.quantity,
-            total: res.quantity + 50,
-            color: status === "Critical" ? "text-red-500" : status === "Low" ? "text-yellow-500" : "text-green-500",
-            bg: status === "Critical" ? "bg-red-500/10" : status === "Low" ? "bg-yellow-500/10" : "bg-green-500/10",
-            unit: res.unit
+            stock: stock,
+            total: total,
+            color: status === "Critical" ? "text-red-500" : status === "Low" ? "text-yellow-500" : status === "Active" ? "text-green-500" : "text-blue-500",
+            bg: status === "Critical" ? "bg-red-500/10" : status === "Low" ? "bg-yellow-500/10" : status === "Active" ? "bg-green-500/10" : "bg-blue-500/10",
+            unit: res.unit || "units"
           }
         })
         setResources(formattedResources)
@@ -81,10 +95,19 @@ export function ResourceInventory() {
   }
 
   const handleAddResource = async () => {
-    if (!newResource.name || !newResource.category || newResource.quantity <= 0) {
+    if (!newResource.name || !newResource.category || newResource.stock < 0 || newResource.total <= 0) {
       toast({
         title: "Validation Error",
-        description: "Please fill all fields correctly.",
+        description: "Please fill all fields correctly. Stock must be >= 0 and total must be > 0.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    if (newResource.stock > newResource.total) {
+      toast({
+        title: "Validation Error",
+        description: "Stock cannot exceed total capacity.",
         variant: "destructive"
       })
       return
@@ -94,14 +117,13 @@ export function ResourceInventory() {
       const resourceData = {
         name: newResource.name,
         category: newResource.category,
-        quantity: parseInt(newResource.quantity),
-        unit: "units",
+        stock: parseInt(newResource.stock) || 0,
+        total: parseInt(newResource.total) || 1,
         location: {
           type: "Point",
           coordinates: [0, 0],
           address: "Central Hub"
-        },
-        managedBy: user?.id || "admin"
+        }
       }
 
       await resourceAPI.create(resourceData)
@@ -112,12 +134,12 @@ export function ResourceInventory() {
       })
       
       setIsAddAssetOpen(false)
-      setNewResource({ name: "", category: "", quantity: 0 })
+      setNewResource({ name: "", category: "", stock: 0, total: 0 })
       fetchResources()
     } catch (error) {
       toast({
         title: "Registration Failed",
-        description: error.response?.data?.message || "Failed to add asset.",
+        description: error.response?.data?.error || error.response?.data?.message || "Failed to add asset.",
         variant: "destructive"
       })
     }
@@ -231,13 +253,24 @@ export function ResourceInventory() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="category">Category</Label>
-                <Input 
-                  id="category" 
-                  placeholder="e.g. Transportation" 
-                  className="bg-white/5 border-white/10"
+                <Select 
                   value={newResource.category}
-                  onChange={(e) => setNewResource({...newResource, category: e.target.value})}
-                />
+                  onValueChange={(value) => setNewResource({...newResource, category: value})}
+                >
+                  <SelectTrigger className="bg-white/5 border-white/10">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Health">Health</SelectItem>
+                    <SelectItem value="Sanitation">Sanitation</SelectItem>
+                    <SelectItem value="Food">Food</SelectItem>
+                    <SelectItem value="Energy">Energy</SelectItem>
+                    <SelectItem value="Transport">Transport</SelectItem>
+                    <SelectItem value="Communication">Communication</SelectItem>
+                    <SelectItem value="Shelter">Shelter</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="stock">Initial Stock</Label>
@@ -245,11 +278,24 @@ export function ResourceInventory() {
                   id="stock" 
                   type="number" 
                   placeholder="0" 
+                  min="0"
                   className="bg-white/5 border-white/10"
-                  value={newResource.quantity}
-                  onChange={(e) => setNewResource({...newResource, quantity: e.target.value})}
+                  value={newResource.stock}
+                  onChange={(e) => setNewResource({...newResource, stock: e.target.value})}
                 />
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="total">Total Capacity</Label>
+              <Input 
+                id="total" 
+                type="number" 
+                placeholder="100" 
+                min="1"
+                className="bg-white/5 border-white/10"
+                value={newResource.total}
+                onChange={(e) => setNewResource({...newResource, total: e.target.value})}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -274,6 +320,7 @@ export function ResourceInventory() {
                   </Badge>
                 </div>
                 <DialogTitle className="text-2xl">{selectedResource.name}</DialogTitle>
+                <DialogDescription>Resource details and telemetry information</DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
                 <div className="space-y-6">

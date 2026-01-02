@@ -55,14 +55,17 @@ export function IncidentReporting() {
   const fetchRecentIncidents = async () => {
     try {
       const response = await incidentAPI.getAll({ limit: 5, sort: '-createdAt' })
-      if (response.data && Array.isArray(response.data)) {
-        const formattedIncidents = response.data.map(incident => ({
-          id: incident.incidentId || incident._id,
+      // Axios wraps the response, so response.data is the backend response body
+      // Backend returns { success: true, data: [...] }
+      const incidentsData = response.data?.data || response.data || []
+      if (Array.isArray(incidentsData)) {
+        const formattedIncidents = incidentsData.map(incident => ({
+          id: incident.reportId || incident._id,
           type: incident.type,
           location: incident.location?.address || `${incident.location?.coordinates?.[1] || 0}, ${incident.location?.coordinates?.[0] || 0}`,
           time: getTimeAgo(incident.createdAt),
           severity: incident.severity,
-          responders: incident.assignedResponders?.length || 0,
+          responders: incident.responders?.length || 0,
         }))
         setRecentIncidents(formattedIncidents)
       }
@@ -128,10 +131,11 @@ export function IncidentReporting() {
 
       // Send to backend
       const response = await incidentAPI.create(incidentData)
+      const incident = response.data?.data || response.data
       
       toast({ 
         title: "Report Submitted", 
-        description: `Incident ${response.data.incidentId} logged and broadcasted to verified responders.`
+        description: `Incident ${incident?.reportId || 'logged'} broadcasted to verified responders.`
       })
 
       // Reset form
@@ -148,7 +152,7 @@ export function IncidentReporting() {
       console.error('Error submitting incident:', error)
       toast({ 
         title: "Submission Failed", 
-        description: error.response?.data?.message || "Failed to submit incident report. Please try again.",
+        description: error.response?.data?.error || error.response?.data?.message || "Failed to submit incident report. Please try again.",
         variant: "destructive"
       })
     } finally {

@@ -122,27 +122,6 @@ function ResQLinkContent() {
                     Real-Time Rescue Dashboard
                   </h1>
                 </div>
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="h-10 border-white/10 bg-white/5 hover:bg-white/10"
-                    onClick={() =>
-                      toast({ title: "Live Feed Active", description: "Connecting to sector mesh network..." })
-                    }
-                  >
-                    <Radio className="w-4 h-4 mr-2 text-primary" />
-                    Live Feed
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-10 border-white/10 bg-white/5 hover:bg-white/10"
-                    onClick={() =>
-                      toast({ title: "Exporting Data", description: "Triage data prepared for CSV download." })
-                    }
-                  >
-                    Export Triage Data
-                  </Button>
-                </div>
               </div>
 
               {/* Stats Grid */}

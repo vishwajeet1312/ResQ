@@ -43,11 +43,28 @@ function calculateScore(type, distance, affectedCount = 1) {
 router.post('/', async (req, res) => {
   try {
     const { type, location, need, affectedCount, notes } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'User';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'User';
 
-    const distance = location.distance || 0;
-    const score = calculateScore(type, distance, affectedCount);
+    // Validation
+    if (!type || !need) {
+      return res.status(400).json({
+        success: false,
+        error: 'Type and need are required'
+      });
+    }
+
+    // Validate type
+    const validTypes = ['Critical', 'Rescue', 'Power', 'Resource', 'Medical', 'Other'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: `Type must be one of: ${validTypes.join(', ')}`
+      });
+    }
+
+    const distance = location?.distance || 0;
+    const score = calculateScore(type, distance, affectedCount || 1);
     const priority = score > 85 ? 4 : score > 70 ? 3 : score > 50 ? 2 : 1;
 
     const triage = await Triage.create({
@@ -155,8 +172,8 @@ router.get('/:id', async (req, res) => {
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status, notes } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'User';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'User';
 
     const triage = await Triage.findById(req.params.id);
 
@@ -212,8 +229,8 @@ router.patch('/:id/status', async (req, res) => {
 router.post('/:id/assign', async (req, res) => {
   try {
     const { role } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'Responder';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'Responder';
 
     const triage = await Triage.findById(req.params.id);
 

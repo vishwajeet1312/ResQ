@@ -13,19 +13,64 @@ router.post('/', async (req, res) => {
     const userName = req.auth?.sessionClaims?.name || 'User';
     const organization = req.auth?.sessionClaims?.organization || '';
 
+    // Validation
+    if (!name || !category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name and category are required'
+      });
+    }
+
+    if (total === undefined || total === null || total <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Total capacity must be greater than 0'
+      });
+    }
+
+    const stockValue = stock !== undefined && stock !== null ? parseInt(stock) : 0;
+    const totalValue = parseInt(total);
+
+    if (stockValue < 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Stock cannot be negative'
+      });
+    }
+
+    if (stockValue > totalValue) {
+      return res.status(400).json({
+        success: false,
+        error: 'Stock cannot exceed total capacity'
+      });
+    }
+
+    // Validate category
+    const validCategories = ['Health', 'Sanitation', 'Food', 'Energy', 'Transport', 'Communication', 'Shelter', 'Other'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        error: `Category must be one of: ${validCategories.join(', ')}`
+      });
+    }
+
     const resource = await Resource.create({
       name,
       category,
-      stock,
-      total,
-      location,
+      stock: stockValue,
+      total: totalValue,
+      location: location || {
+        type: 'Point',
+        coordinates: [0, 0],
+        address: 'Central Hub'
+      },
       owner: {
         userId,
         userName,
         organization
       },
       specifications,
-      status: calculateStatus(stock, total),
+      status: calculateStatus(stockValue, totalValue),
       lastRestockedAt: new Date()
     });
 
@@ -51,6 +96,7 @@ router.post('/', async (req, res) => {
 
 // Helper function to calculate resource status
 function calculateStatus(stock, total) {
+  if (!total || total <= 0) return 'Offline';
   const percentage = (stock / total) * 100;
   if (percentage <= 20) return 'Critical';
   if (percentage <= 40) return 'Low';

@@ -6,6 +6,9 @@ import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SOSDetailDialog } from "@/components/sos-detail-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { triageAPI } from "@/lib/api"
+import { getSocket, onNewTriage, onSOSBroadcast, onNewIncident } from "@/lib/socket"
 import dynamic from "next/dynamic"
 
 // Dynamically import map component to avoid SSR issues
@@ -80,6 +83,7 @@ const mapPings = [
 ]
 
 export function SOSMap() {
+  const { toast } = useToast()
   const [selectedPing, setSelectedPing] = useState(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isLiveFeedActive, setIsLiveFeedActive] = useState(false)
@@ -89,9 +93,128 @@ export function SOSMap() {
     setIsMounted(true)
   }, [])
 
+  // Live Feed Socket Connection
   useEffect(() => {
-    setIsMounted(true)
-  }, [])
+    if (!isLiveFeedActive) return
+
+    const socket = getSocket()
+    if (!socket || !socket.connected) {
+      toast({
+        title: "Connection Error",
+        description: "Socket not connected. Please refresh.",
+        variant: "destructive",
+      })
+      setIsLiveFeedActive(false)
+      return
+    }
+
+    // Define event handlers
+    const handleNewTriage = (data) => {
+      toast({
+        title: "New Triage Request",
+        description: `${data.type} - Score: ${data.score}`,
+      })
+    }
+
+    const handleSOSBroadcast = (data) => {
+      toast({
+        title: "Emergency SOS",
+        description: `New SOS signal received`,
+        variant: "destructive",
+      })
+    }
+
+    const handleNewIncident = (data) => {
+      toast({
+        title: "New Incident",
+        description: `${data.type} - ${data.severity} severity`,
+      })
+    }
+
+    // Register event listeners
+    socket.on('new-triage', handleNewTriage)
+    socket.on('sos-broadcast', handleSOSBroadcast)
+    socket.on('new-incident', handleNewIncident)
+
+    toast({
+      title: "Live Feed Active",
+      description: "Connected to real-time updates",
+    })
+
+    // Cleanup: Remove listeners when Live Feed is turned off
+    return () => {
+      if (socket) {
+        socket.off('new-triage', handleNewTriage)
+        socket.off('sos-broadcast', handleSOSBroadcast)
+        socket.off('new-incident', handleNewIncident)
+      }
+    }
+  }, [isLiveFeedActive, toast])
+
+  const handleExportTriage = async () => {
+    try {
+      toast({
+        title: "Exporting Data",
+        description: "Fetching triage data...",
+      })
+
+      const response = await triageAPI.getAll({ limit: 1000 })
+      const triageData = response.data?.data || response.data || []
+
+      if (!Array.isArray(triageData) || triageData.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No triage data available to export.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Convert to CSV
+      const headers = ['Request ID', 'Type', 'Need', 'Status', 'Score', 'Priority', 'Location', 'Created At', 'User']
+      const csvRows = [
+        headers.join(','),
+        ...triageData.map(item => {
+          const row = [
+            item.requestId || item._id || '',
+            item.type || '',
+            `"${(item.need || '').replace(/"/g, '""')}"`,
+            item.status || '',
+            item.score || '',
+            item.priority || '',
+            `"${(item.location?.address || item.location?.sector || '').replace(/"/g, '""')}"`,
+            item.createdAt ? new Date(item.createdAt).toISOString() : '',
+            `"${(item.userName || '').replace(/"/g, '""')}"`
+          ]
+          return row.join(',')
+        })
+      ]
+
+      const csvContent = csvRows.join('\n')
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      
+      link.setAttribute('href', url)
+      link.setAttribute('download', `triage-data-${new Date().toISOString().split('T')[0]}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Export Complete",
+        description: `${triageData.length} records exported to CSV`,
+      })
+    } catch (error) {
+      console.error('Error exporting triage data:', error)
+      toast({
+        title: "Export Failed",
+        description: error.response?.data?.error || "Failed to export triage data.",
+        variant: "destructive",
+      })
+    }
+  }
 
   if (!isMounted) {
     return (
@@ -174,8 +297,8 @@ export function SOSMap() {
         <Button
           variant="outline"
           size="sm"
-          className="h-9 bg-black/40 border-white/10 backdrop-blur-md"
-          onClick={() => alert("Preparing Triage CSV Export...")}
+          className="h-9 bg-black/40 border-white/10 backdrop-blur-md hover:bg-black/60"
+          onClick={handleExportTriage}
         >
           <Download className="w-4 h-4 mr-2" />
           Export Triage Data

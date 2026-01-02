@@ -15,16 +15,28 @@ const generateMissionId = () => {
 // @access  Private
 router.post('/', async (req, res) => {
   try {
-    const { target, description, priority, location, objectives, resources } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'User';
+    const { target, description, priority, location, objectives, resources, title } = req.body;
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'User';
+
+    // Validation
+    if (!target && !title) {
+      return res.status(400).json({
+        success: false,
+        error: 'Target or title is required'
+      });
+    }
 
     const mission = await Mission.create({
       missionId: generateMissionId(),
-      target,
+      target: target || title,
       description,
       priority: priority || 'Medium',
-      location,
+      location: location || {
+        type: 'Point',
+        coordinates: [0, 0],
+        address: 'Location not specified'
+      },
       objectives: objectives || [],
       resources: resources || [],
       status: 'Planned',
@@ -125,8 +137,8 @@ router.get('/:id', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const { status, description, priority, objectives } = req.body;
-    const userId = req.auth.userId;
-    const userName = req.auth.sessionClaims?.name || 'User';
+    const userId = req.auth?.userId || 'demo-user';
+    const userName = req.auth?.sessionClaims?.name || 'User';
 
     const mission = await Mission.findById(req.params.id);
 
@@ -205,7 +217,7 @@ router.post('/:id/teams', async (req, res) => {
 
     mission.updates.push({
       message: `Team ${teamName} assigned to mission`,
-      updatedBy: req.auth.userId,
+      updatedBy: req.auth?.userId || 'demo-user',
       timestamp: new Date()
     });
 
@@ -273,7 +285,7 @@ router.delete('/:id', async (req, res) => {
     mission.status = 'Cancelled';
     mission.updates.push({
       message: 'Mission cancelled',
-      updatedBy: req.auth.userId,
+      updatedBy: req.auth?.userId || 'demo-user',
       timestamp: new Date()
     });
 
